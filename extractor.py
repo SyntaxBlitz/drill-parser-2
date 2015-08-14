@@ -1,11 +1,19 @@
+# coding=UTF-8
 import xml.dom.minidom
 import svg.path
 from numpy import interp # only for interpolation, you can remove this dependency pretty easily
+import math
+
+counter = 500
 
 class DrillSpot:
 	letter = ''
 
 	def __init__(self, location=(), number=0):
+		global counter
+		if number == 0:
+			number = counter
+		counter += 1 # using a counter ensures that if a spot has no number, it still has a unique identifier so we can manually fix it later
 		self.location = location
 		self.number = number
 
@@ -13,7 +21,7 @@ class DrillSpot:
 		# first tuple value is steps to the RIGHT of the 50 from the director's viewpoint
 		# a negative value means you're on the left side of the field, or side 1
 		# second tuple value is steps UP from the front sideline
-		# all values are rounded to the half-step
+		# all values are rounded to three decimals
 		
 		# left is x = 29. right is x = 764.
 		# interpolate 29->764 to -80->80
@@ -22,7 +30,7 @@ class DrillSpot:
 		# top is y = 56. bottom is y = 442
 		y = interp(self.location[1], [56, 442], [84, 0])
 
-		return (round(x * 2) / 2.0, round(y * 2) / 2.0)
+		return (round(x, 3), round(y, 3))
 
 
 
@@ -152,6 +160,8 @@ def getDrillSpots(filename):
 		except KeyError:
 			continue
 
+	orphanNumbers = []
+
 	for pathElement in paths:
 		try:
 			if pathElement.attributes['style'].value != " stroke:none;fill-rule:nonzero;fill:rgb(0%,0%,0%);fill-opacity:1;":
@@ -165,10 +175,40 @@ def getDrillSpots(filename):
 			number = numbers[length]
 			complexCoordinate = path[0].start - number[1]
 			coordinate = (complexCoordinate.real, complexCoordinate.imag)
-			
+
 			objSet = [x for x in drillSpots if x.location == coordinate]
 			objSet[0].number = number[0]
-		except KeyError, IndexError:
+		except KeyError:
 			continue
+		except IndexError:
+			orphanNumbers.append([number, path])
+
+	for numberPath in orphanNumbers:
+		number = numberPath[0]
+		path = numberPath[1]
+
+		# print number[0], coordinate
+		# numbers don't always line up in the same spot; instead we look for the closest letter to this number
+		# naïve implementation is acceptable, no need to create a tree or deal with more dependencies
+		closestDistance = 100
+		closest = None
+		for d in [d for d in drillSpots if d.number > 500]:	 # loop through the unassigned drill spots
+			dx = d.location[0] - path[0].start.real
+			dy = d.location[1] - path[0].start.imag
+			distance = math.sqrt(dx ** 2 + dy ** 2)
+			if distance < closestDistance:
+				closestDistance = distance
+				closest = d
+
+		if closest is None:
+			print 'large problem'
+		elif number[0] not in [d.number for d in drillSpots if d.letter == closest.letter]:	# no duplicates
+			closest.number = number[0]
+
+	for d in drillSpots:
+		if d.number > 500:
+			print "problem"	# we assume that if a number was misassigned, there will be some letter without a number.
+							# this isn't necessarily true, but with this dataset I think it's a safe assumption.
+							# we can manually fix these pages when we see that there was an error output during generation.
 
 	return drillSpots
